@@ -21,6 +21,7 @@
 			<input type="submit" value="Einloggen" onclick="return sendForm('/providers/users/','.userlogin-box','.userlogin-box','#user_login','login', '', '')" />
 			
 		</form>
-		<a href="#" onclick="LoadDocument('/providers/users/','#content','Registrieren','register','', '')">Registrieren</a>
+
+		[#USER_LOGIN_NAV#]
 	</div>
 </div>
