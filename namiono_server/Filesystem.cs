@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -26,6 +27,31 @@ namespace Namiono
 			return path;
 		}
 
+		public static int ExecuteFile(string path, string arg)
+		{
+			var result = 1;
+			try
+			{
+				using (var prc = new Process())
+				{
+					prc.StartInfo.Arguments = arg;
+					prc.StartInfo.FileName = path;
+
+					prc.Start();
+
+					prc.WaitForExit();
+
+					result = prc.ExitCode;
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine(ex);
+			}
+
+			return result;
+		}
+
 		public static void Delete(string path)
 		{
 			if (File.Exists(path))
@@ -47,13 +73,13 @@ namespace Namiono
 		public bool Exists(string path)
 		{
 			var x = ResolvePath(path);
-			Console.WriteLine(x);
 			return File.Exists(x);
 		}
 
 		public static string Combine(string p1, params string[] paths)
 		{
 			var path = p1;
+
 			for (var i = 0; i < paths.Length; i++)
 				path = ReplaceSlashes(Path.Combine(path, paths[i]), "\\", "/");
 
@@ -64,15 +90,15 @@ namespace Namiono
 		{
 			var data = new byte[0];
 
-			using (var fs = new FileStream(ResolvePath(path), FileMode.Open,
-				FileAccess.Read, FileShare.Read, this.fscache, true))
+			using (var fs = new FileStream(ResolvePath(path), FileMode.Open, FileAccess.Read,
+				FileShare.Read, this.fscache, FileOptions.RandomAccess))
 			{
 				data = new byte[(count == 0 || fs.Length < count) ? fs.Length : count];
 				var bytesRead = 0;
 
 				do
 				{
-					bytesRead = await fs.ReadAsync(data, 0, data.Length);
+					bytesRead = await fs.ReadAsync(data, offset, data.Length);
 				} while (bytesRead > 0);
 			}
 
@@ -81,28 +107,23 @@ namespace Namiono
 
 		public async Task<bool> Write(string path, byte[] data, int offset = 0, int count = 0)
 		{
-			try
-			{
-				using (var fs = new FileStream(ResolvePath(path), FileMode.OpenOrCreate, FileAccess.Write))
-					await fs.WriteAsync(data, 0, count);
+			var result = false;
 
-				return true;
-			}
-			catch (Exception ex)
+			using (var fs = new FileStream(ResolvePath(path),
+				FileMode.OpenOrCreate, FileAccess.Write, FileShare.Write))
 			{
-				return false;
+				await fs.WriteAsync(data, offset, count);
+				result = true;
 			}
+
+			return result;
 		}
 
 		public async void Write(string path, string data, int offset = 0, int count = 0)
 		{
-			var chars = data.ToCharArray();
-			var tmp = Encoding.UTF8.GetBytes(chars, 0, chars.Length);
+			var tmp = Encoding.ASCII.GetBytes(data);
 
-			await Task.Run(() =>
-			{
-				Write(path, tmp, offset, count);
-			});
+			await Task.Run(() => Write(path, tmp, offset, count));
 		}
 
 		public string Root
