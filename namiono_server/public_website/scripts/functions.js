@@ -34,10 +34,10 @@
 
 			$(tar).fadeIn("1300");
 		})
-		.fail(function (html)
+		.fail(function(html)
 		{
 			var tar = request.getResponseHeader("Target");
-			$(tar).fadeOut("50", function () {
+			$(tar).fadeOut("50", function() {
 				$(tar).html(MsgBox(title, '<p class=\"exclaim\">Die Anfrage wurde beendet! (Fehler: ' + html.statusText + ')</p>'));
 			});
 
@@ -55,7 +55,7 @@ function MsgBox(title, message) {
 }
 
 function update_metadata() {
-	LoadDocument("/providers/shoutcast/", "#streaminfo", '', 'metadata', '');
+	LoadDocument("/providers/shoutcast/", "#streaminfo", '', 'metadata', '', '');
 	setTimeout("update_metadata()", 90000);
 }
 
