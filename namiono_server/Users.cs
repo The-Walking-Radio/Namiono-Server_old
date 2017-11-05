@@ -25,6 +25,22 @@ namespace Namiono
 			return db.Count("users", "id", string.Format("{0}", id)) != 0 && uid != "0";
 		}
 
+		public Dictionary<string, string> GetDJAccounts()
+		{
+			var SQLres = db.SQLQuery<uint>("SELECT djname, djpass, djpriority FROM users WHERE moderator='1' AND locked !='1' AND djpass !='-' AND service_profile !='1'");
+			var res = new Dictionary<string, string>();
+			if (SQLres.Count != 0)
+			{
+				for (var i = uint.MinValue; i < SQLres.Count; i++)
+				{
+					if (!res.ContainsKey(SQLres[i]["djname"]))
+						res.Add(SQLres[i]["djname"], string.Join(";", SQLres[i]["djname"], SQLres[i]["djpass"], SQLres[i]["djpriority"]));
+				}
+			}
+
+			return res;
+		}
+
 		public bool CanEditUsers(T id)
 		{
 			if (UserExists(id))
@@ -229,6 +245,11 @@ namespace Namiono
 			return db.SQLQuery(string.Format("SELECT * FROM users WHERE id='{0}'", id), "username");
 		}
 
+		public string GetUserIDbyName(string username)
+		{
+			return db.SQLQuery(string.Format("SELECT id FROM users WHERE username='{0}'", username), "id");
+		}
+
 		public string GetUserDesignbyID(T id, string design)
 		{
 			var d = db.SQLQuery(string.Format("SELECT design FROM users WHERE id='{0}'", id), "design");
@@ -378,19 +399,19 @@ namespace Namiono
 
 			for (var i = uint.MinValue; i < usrs.Count; i++)
 			{
-				options = string.Format("<a href=\"#\" onclick=\"LoadDocument('/providers/users/','#content','Profil','profile','uid={0}','')\">Profil</a>", usrs[i]["id"]);
+				options = string.Format("<a href=\"#\" onclick=\"LoadDocument('/providers/users/','#content','Profil','profile','uid={0}','')\"><img src=\"images/show.png\" height=\"24px\" /></a>", usrs[i]["id"]);
 
 				if (CanDeleteUsers(userid) && usrs.Count >= 2)
-					options += string.Format(" <a href=\"#\" onclick=\"LoadDocument('/providers/users/','#content','Löschen','del','uid={0}','')\">Löschen</a>", usrs[i]["id"]);
+					options += string.Format(" <a href=\"#\" onclick=\"LoadDocument('/providers/users/','#content','Löschen','del','uid={0}','')\"><img src=\"images/delete.png\" height=\"24px\" /></a>", usrs[i]["id"]);
 
 				if (CanEditUsers(userid) || usrs[i]["id"] == string.Format("{0}", userid))
-					options += string.Format(" <a href=\"#\" onclick=\"LoadDocument('/providers/users/','#content','Bearbeitem','edit','uid={0}','')\">Edit</a>", usrs[i]["id"]);
+					options += string.Format(" <a href=\"#\" onclick=\"LoadDocument('/providers/users/','#content','Bearbeitem','edit','uid={0}','')\"><img src=\"images/edit.png\" height=\"24px\" /></a>", usrs[i]["id"]);
 
-				tmp += string.Format("<div class=\"ul_row\"><div class=\"td\">{0}</div><div class=\"td\">{1}</div><div class=\"td\">{2}</div></div>\n",
-					usrs[i]["username"], GetGroupNameByID((T)Convert.ChangeType(usrs[i]["usergroup"], typeof(T))), options);
+				tmp += string.Format("<div class=\"ul_row\"><div class=\"td\"><img src=\"{3}\" height=\"24px\" /></div><div class=\"td\">{0}</div><div class=\"td\">{1}</div><div class=\"td\">{2}</div></div>\n",
+					usrs[i]["username"], GetGroupNameByID((T)Convert.ChangeType(usrs[i]["usergroup"], typeof(T))), options, GetUserAvatarbyID((T)Convert.ChangeType(usrs[i]["id"],typeof(T))));
 			}
 
-			return box.Replace("[[box-content]]", tmp).Replace("[[box-title]]", "Benutzer Liste").Replace("[[content]]", "userinfo");
+			return box.Replace("[[box-content]]", tmp).Replace("[[box-title]]", "Benutzer Liste").Replace("[[content]]", "userlist");
 		}
 
 		public string GetProfile(ref Filesystem fs, T id)
@@ -414,8 +435,23 @@ namespace Namiono
 		{
 			var tpl = "user_login";
 			var output = Dispatcher.ReadTemplate(ref fs, tpl);
+			var nav = "<ul>";
 
-			return output;
+			var navigation = db.SQLQuery<uint>(string.Format("SELECT * FROM navigation WHERE level <= '0' AND target = 'userlogin'"));
+			if (navigation.Count != 0)
+			{
+				for (var i = uint.MinValue; i < navigation.Count; i++)
+				{
+					var url = navigation[i]["link"].Contains(".") ? navigation[i]["link"] : string.Format("/providers/{0}/", navigation[i]["link"]);
+					var data = navigation[i]["data"];
+
+					nav += string.Format("<li><a href=\"#\" onclick=\"LoadDocument('{0}', '#content', '{1}', '{2}', '{3}', '')\">{1}</a></li>\n",
+						url, navigation[i]["name"], navigation[i]["action"], data);
+				}
+			}
+
+			nav += "</ul>";
+			return output.Replace("[#USER_LOGIN_NAV#]", nav);
 		}
 
 		public string Get_admincp_user_settings(Filesystem fs, T user)
