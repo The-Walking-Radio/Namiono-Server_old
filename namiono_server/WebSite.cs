@@ -176,7 +176,7 @@ namespace Namiono
 											lock (ShoutcastServers)
 											{
 												foreach (var sc in ShoutcastServers.Values)
-													output += sc.Members[(T)Convert.ChangeType(int.Parse(e.Params["sid"]), typeof(T))].Clients;
+													output += sc.Members[(T)Convert.ChangeType(int.Parse(e.Params["sid"]), typeof(T))].Clients(userid);
 											}
 										}
                                         else
@@ -198,6 +198,39 @@ namespace Namiono
 									}
 									break;
 								case WebServer.SiteAction.Login:
+									break;
+								case WebServer.SiteAction.Execute:
+									if (e.Context.Request.Headers["UAgent"] == "Namiono")
+									{
+										if (e.Params.ContainsKey("param"))
+										{
+											var resp = string.Empty;
+											var result = Filesystem.ExecuteFile("/etc/init.d/shoutcast", e.Params["param"]);
+											if (result == 0)
+											{
+												e.Context.Response.StatusCode = 200;
+												e.Context.Response.StatusDescription = "OK";
+												e.Context.Response.ContentType = "text/html";
+											}
+											else
+											{
+												e.Context.Response.StatusCode = 200;
+												e.Context.Response.StatusDescription = "Process failed to start!";
+												e.Context.Response.ContentType = "text/html";
+											}
+											ws.Send(ref resp, ref e.Context, Encoding.UTF8);
+										}
+										else
+										{
+											var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
+											ws.Send(ref err, ref e.Context);
+										}
+									}
+									else
+									{
+										var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
+										ws.Send(ref err, ref e.Context);
+									}
 									break;
 								case WebServer.SiteAction.Show:
 									if (e.Context.Request.Headers["UAgent"] == "Namiono")

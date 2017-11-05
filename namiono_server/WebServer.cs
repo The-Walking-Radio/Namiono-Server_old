@@ -28,7 +28,8 @@ namespace Namiono
 			MetaData,
 			Clients,
 			Profile,
-			Register
+			Register,
+			Execute
 		}
 
 		public enum HTTPMethod
@@ -183,6 +184,9 @@ namespace Namiono
 					break;
 				case "none":
 					action = SiteAction.None;
+					break;
+				case "execute":
+					action = SiteAction.Execute;
 					break;
 				default:
 					if (reqType != RequestType.sync)
