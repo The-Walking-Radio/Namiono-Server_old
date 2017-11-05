@@ -56,7 +56,6 @@ namespace Namiono
 						this.autodj = new TranscastClients<T>(tc[i]["relay_host"],
 							ushort.Parse(tc[i]["relay_port"]), tc[i]["relay_pass"], tc[i]["relay_admin"]);
 				}
-
 			}
 
 			this.serverid = serverid;
@@ -76,6 +75,7 @@ namespace Namiono
 		public string Webplayer(T id)
 		{
 			var player_output = "<audio controls=\"\" preload=\"none\" muted=\"yes\" class=\"player_control\">\n";
+
 			player_output += string.Format("<source src=\"{0}\" type=\"{1}\" />\n",
 				members[id].StreamPath, members[id].ContentType);
 
@@ -92,19 +92,18 @@ namespace Namiono
 
 			if (members.Count != 0)
 			{
-				
 				foreach (var member in members.Values)
 				{
 					if (!member.Active)
 						continue;
-					playerOutput = "<section id=\"streaminfo\">\n";
-					playerOutput += member.MetaData;
-					playerOutput += "</section>\n";
+
+					playerOutput = member.MetaData;
 					playerOutput += "<hr />";
 
 					var nav_links = db.SQLQuery<uint>("SELECT * FROM navigation WHERE target ='playlist'");
-
+					playerOutput += "<ul>";
 					if (nav_links.Count != 0)
+					{
 						for (var i = uint.MinValue; i < nav_links.Count; i++)
 						{
 							var data = nav_links[i]["data"]
@@ -114,10 +113,13 @@ namespace Namiono
 							var url = string.Format("/providers/{0}/?{1}", nav_links[i]["link"], data);
 							playerOutput += string.Format("<li><a href=\"#\" onclick=\"Window('{0}','{1}')\">{1}</a></li>", url, nav_links[i]["name"]);
 						}
+					}
 
 					if (users.CanSeeStreamStats(userid))
 						playerOutput += string.Format("\t<li><a href=\"#\" onclick=\"LoadDocument('/providers/shoutcast/','#content','{0}'," +
 							"'clients','serverid={1}&sid={2}&show=clients', '')\">Aktuelle Zuhörer</a></li>", member.ServerName, this.serverid, member.ID);
+
+					playerOutput += "</ul>";
 				}
 			}
 
@@ -183,29 +185,28 @@ namespace Namiono
 					var totalStreams = byte.Parse(response.DocumentElement.
 						SelectSingleNode("STREAMSTATS/ACTIVESTREAMS").InnerText);
 
-					if (totalStreams != 0 && totalStreams < byte.MaxValue)
+					if (totalStreams != byte.MinValue && totalStreams < byte.MaxValue)
 						for (var i = (byte)1; i <= totalStreams; i++)
 						{
 							var id = (T)Convert.ChangeType(i, typeof(T));
 							lock (members)
 							{
 								if (!members.ContainsKey(id))
-									using (var stream = new ShoutcastStream<T>(ref fs, ref geodb, ref users, hostname, port, password))
-									{
+								{
+									var stream = new ShoutcastStream<T>(ref fs, ref geodb, ref users, hostname, port, password);
 										stream.ID = id;
 
-										if (!members.ContainsKey(stream.ID))
+									if (!members.ContainsKey(stream.ID))
+									{
+										if (!string.IsNullOrEmpty(stream.Clients((T)Convert.ChangeType(users.GetUserIDbyName("Auto DJ"), typeof(T)))))
 										{
-											if (stream.Clients != null)
-											{
-												if (!members.ContainsKey(stream.ID))
-												{
-													members.Add(stream.ID, stream);
-													members[stream.ID].Start();
-												}
-											}
+											if (!members.ContainsKey(stream.ID))
+												members.Add(stream.ID, stream);
+
+											members[stream.ID]?.Update();
 										}
 									}
+								}
 							}
 						}
 				};
@@ -248,7 +249,9 @@ namespace Namiono
 				for (var i = uint.MinValue; i < streams.Count; i++)
 				{
 					tmp += string.Format("<div class=\"tr sp_row\"><div class=\"td sc_col_id\"><a href=\"#\"onclick=\"Window('http://{0}:{1}/admin.cgi', 'Shoutcast Server')\">{0}</a></div><div class=\"td sc_col_id\">Shoutcast2 & Proxy</div>" +
-						"<div class=\"td sc_col_id\">{2}</div><div class=\"td sc_col_id\"></div> - </div>", streams[i]["hostname"], streams[i]["port"], this.advertXMLStats ? "Proxy" : "Client");
+						"<div class=\"td sc_col_id\">{2}</div><div class=\"td sc_col_id\"><a href=\"#\" onclick=\"LoadDocument('/providers/shoutcast/','#content','Starten'," +
+							"'execute','serverid={1}&sid={2}&param=start', '')\">start</a> - <a href=\"#\" onclick=\"LoadDocument('/providers/shoutcast/','#content','Stoppen'," +
+							"'execute','serverid={1}&sid={2}&param=stop', '')\">stop</a></div> - </div>", streams[i]["hostname"], streams[i]["port"], this.advertXMLStats ? "Proxy" : "Client");
 				}
 			}
 
@@ -272,8 +275,9 @@ namespace Namiono
 
 			lock (members)
 			{
-				foreach (var member in members.Values)
-					member?.Heartbeat();
+				if (members.Count != 0)
+					foreach (var member in members.Values)
+						member?.Heartbeat();
 			}
 		}
 
