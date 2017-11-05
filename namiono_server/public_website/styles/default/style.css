@@ -11,7 +11,7 @@
 
 .user_image
 {
-	display: none;
+	transition: 1.5s;
 }
 
 .input_text {
@@ -63,6 +63,7 @@
 	margin-top: 10px;
 	display: inline-block;
 	clear: both;
+	float: left;
 	width: 100%;
 	height: 48px;
 	max-height: 48px;
@@ -82,7 +83,7 @@
 
 .sp_row_right {
 	display: inline-block;
-	clear: left;
+	clear: right;
 	float: right;
 	width: 50%;
 	height: 48px;
@@ -92,6 +93,7 @@
 
 .sp_row_right img {
 	max-height: 38px;
+	float: left;
 	vertical-align: middle;
 }
 
@@ -114,26 +116,26 @@
 }
 
 .sc_col_id {
+	position:relative;
+	top: 0px;
 	width: 25%;
+	height: 100%;
 }
 
 .sc_col_ip {
 	width: 25%;
+	height: 100%;
 }
 
 .sc_col_ua {
 	width: 25%;
-}
-
-#streaminfo a
-{
-	display: inline-block;
-	padding-left: 15px;
+	height: 100%;
 }
 
 .sp_row_left {
 	display: inline-block;
 	clear: left;
+	float: left;
 	width: 15%;
 	height: 100%;
 	padding-top: 10px;
@@ -180,6 +182,7 @@ header {
 }
 
 footer {
+	clear: both;
 	text-align: center;
 }
 
