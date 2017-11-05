@@ -126,7 +126,7 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 
 		tpl = tpl.Replace("[#DAY#]", string.Format("{0}", day));
 		tpl = tpl.Replace("[#SDATE#]", curDay.ToShortDateString());
-		tpl = tpl.Replace("[#DAYNAME#]", curDay.ToString("dddd"));
+		tpl = tpl.Replace("[#DAYNAME#]", curDay.ToString("dddd", new CultureInfo("de-DE")));
 
 		var entries = string.Empty;
 
@@ -187,17 +187,12 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 		{
 			var d_ts = GetMonday().AddDays(i).Subtract(new DateTime(1970, 1, 1)).TotalSeconds;
 			var dbEntry = db.SQLQuery<uint>(string.Format("SELECT banner FROM sendeplan WHERE spident = '{0}'", this.spident));
+
 			if (dbEntry.Count != 0)
-			{
 				for (var ib = uint.MinValue; ib < dbEntry.Count; i++)
-				{
 					if (!string.IsNullOrEmpty(dbEntry[ib]["banner"]))
-					{
 						if (fs.Exists(Filesystem.Combine("uploads/events/", dbEntry[ib]["banner"])))
 							banners.Add(string.Format("<img src=\"uploads/events/{0}\" />", dbEntry[ib]["banner"]));
-					}
-				}
-			}
 		}
 
 		return banners.Count != 0 ? banners[new System.Random().Next(0, banners.Count)] : string.Empty;
@@ -327,7 +322,7 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 		var day_timestamp = week.Subtract(new DateTime(1970, 1, 1)).TotalSeconds;
 
 		var tpl = Dispatcher.ReadTemplate(ref fs, "content_box");
-		var title = string.Format("Sendung für {0} eintragen...", week.ToString("dddd"));
+		var title = string.Format("Sendung für {0} eintragen...", week.ToString("dddd", new CultureInfo("de-DE")));
 		var addFormTpl = string.Empty;
 
 		if (users.CanAddSendeplan(userid))
