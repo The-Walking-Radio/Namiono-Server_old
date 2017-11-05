@@ -5,6 +5,7 @@ using System.Net;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.IO;
 
 namespace Namiono
 {
@@ -14,9 +15,7 @@ namespace Namiono
 		string hostname;
 		string password;
 		string username;
-
-		string title;
-		string name;
+		CredentialCache credentials;
 
 		public override Dictionary<T, TranscastSource<T>> Members => new Dictionary<T, TranscastSource<T>>();
 
@@ -26,17 +25,34 @@ namespace Namiono
 			this.password = password;
 			this.port = port;
 			this.username = username;
+			this.credentials = new CredentialCache();
+			this.credentials.Add(new Uri(string.Format("http://{0}:{1}/api", hostname, this.port)), "Basic",
+				new NetworkCredential(this.username,this.password));
 		}
 
 		public void Download()
 		{
-			var req = WebRequest.CreateHttp(new Uri(string.Format("http://{2}:{3}@{0}:{1}/api", hostname, port, this.password, this.username)));
+			var postdata = "op=test";
+			postdata += "&seq=12";
 
-				req.UserAgent = "Mozilla/5.0";
-				req.KeepAlive = true;
-				req.AllowAutoRedirect = true;
-				req.Accept = "*/*";
-				req.Method = "POST";
+			var req = WebRequest.CreateHttp(new Uri(string.Format("http://{0}:{1}/api", hostname, this.port)));
+			req.UseDefaultCredentials = false;
+			req.Credentials = this.credentials;
+			req.ContentType = "application/x-www-form-urlencoded; charset=UTF-8";
+			req.UserAgent = "Mozilla";
+			req.AllowAutoRedirect = true;
+			req.Method = "POST";
+			var reqstream = req.GetRequestStream();
+
+			var data = Encoding.UTF8.GetBytes(postdata);
+			reqstream.WriteAsync(data, 0, data.Length);
+			reqstream.Close();
+
+			using (var resp = (HttpWebResponse)req.GetResponse())
+			{
+				var sr = new StreamReader(resp.GetResponseStream()).ReadToEnd();
+				Console.WriteLine(sr);
+			}
 		}
 	}
 
