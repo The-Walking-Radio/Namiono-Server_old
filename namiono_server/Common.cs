@@ -59,11 +59,11 @@ namespace Namiono
 
 		public void RemoveWebSite(string name)
 		{
-			if (webSites.ContainsKey(name))
-			{
-				webSites[name]?.Close();
-				webSites.Remove(name);
-			}
+			if (!webSites.ContainsKey(name))
+				return;
+
+			webSites[name]?.Close();
+			webSites.Remove(name);
 		}
 
 		public void Start()

@@ -17,6 +17,7 @@ namespace Namiono
 		string streamPath;
 		string serverUrl;
 		string contentType;
+
 		Dictionary<T, Listener<T>> listeners;
 		Filesystem fs;
 		Users<T> users;
@@ -29,7 +30,8 @@ namespace Namiono
 		bool active;
 		DatabaseReader geodb;
 
-		public ShoutcastStream(ref Filesystem fs, ref DatabaseReader geodb, ref Users<T> users, string hostname, int port, string password = "")
+		public ShoutcastStream(ref Filesystem fs, ref DatabaseReader geodb,
+			ref Users<T> users, string hostname, int port, string password = "")
 		{
 			this.password = password;
 			this.hostname = hostname;
@@ -43,12 +45,11 @@ namespace Namiono
 
 		void ParseData(string response)
 		{
-			var result = response;
 			if (string.IsNullOrEmpty(response))
 				return;
 
 			var xml = new XmlDocument();
-			xml.LoadXml(result);
+			xml.LoadXml(response);
 
 			xml.CreateXmlDeclaration("1.0", "UTF-8", "yes");
 			serverName = xml.DocumentElement.SelectSingleNode("SERVERTITLE").InnerText;
@@ -56,7 +57,7 @@ namespace Namiono
 			songTitle = xml.DocumentElement.SelectSingleNode("SONGTITLE").InnerText;
 			contentType = xml.DocumentElement.SelectSingleNode("CONTENT").InnerText;
 
-			streamPath = string.Format("http://{0}:{1}{2}", this.hostname, this.port,
+			streamPath = string.Format("http://{0}:{1}{2}", hostname, port,
 				xml.DocumentElement.SelectSingleNode("STREAMPATH").InnerText);
 
 			active = int.Parse(xml.DocumentElement.SelectSingleNode("STREAMSTATUS").InnerText) != 0;
@@ -68,34 +69,47 @@ namespace Namiono
 				var ls = xml.DocumentElement.SelectNodes("LISTENERS/LISTENER");
 				for (var i = 0; i < ls.Count; i++)
 				{
-					var uid = ulong.Parse(ls.Item(i).SelectSingleNode("UID").InnerText);
-					if (!listeners.ContainsKey((T)Convert.ChangeType(uid, typeof(T))))
+					if (string.IsNullOrEmpty(ls.Item(i).SelectSingleNode("UID").InnerText))
+						continue;
+
+					var uid = (T)Convert.ChangeType(ulong.Parse(ls.Item(i).SelectSingleNode("UID").InnerText), typeof(T));
+
+					if (!listeners.ContainsKey(uid))
 					{
-						var listener = new Listener<T>();
-						listener.IP = Dns.GetHostEntry(ls.Item(i).SelectSingleNode("HOSTNAME").InnerText).AddressList[0];
+						var hostEbtry = Dns.GetHostEntry(ls.Item(i).SelectSingleNode("HOSTNAME").InnerText).AddressList;
+						if (hostEbtry.Count() != 0)
+						{
+							var listener = new Listener<T>();
+							listener.IP = hostEbtry[0];
 
-						var ctime = ulong.Parse(ls.Item(i).SelectSingleNode("CONNECTTIME").InnerText);
-						listener.ConnectionTime = (T)Convert.ChangeType(ctime, typeof(T));
+							var ctime = ulong.Parse(ls.Item(i).SelectSingleNode("CONNECTTIME").InnerText);
+							listener.ConnectionTime = (T)Convert.ChangeType(ctime, typeof(T));
 
-						var grid = ulong.Parse(ls.Item(i).SelectSingleNode("GRID").InnerText);
-						listener.GRID = (T)Convert.ChangeType(grid, typeof(T));
+							var grid = ulong.Parse(ls.Item(i).SelectSingleNode("GRID").InnerText);
+							listener.GRID = (T)Convert.ChangeType(grid, typeof(T));
 
-						var triggers = ulong.Parse(ls.Item(i).SelectSingleNode("TRIGGERS").InnerText);
-						listener.Triggers = (T)Convert.ChangeType(triggers, typeof(T));
+							var triggers = ulong.Parse(ls.Item(i).SelectSingleNode("TRIGGERS").InnerText);
+							listener.Triggers = (T)Convert.ChangeType(triggers, typeof(T));
 
-						var ua = ls.Item(i).SelectSingleNode("USERAGENT").InnerText;
-						listener.UserAgent = !string.IsNullOrEmpty(ua) ? ua : "Unbekannt";
+							var ua = ls.Item(i).SelectSingleNode("USERAGENT").InnerText;
+							listener.UserAgent = !string.IsNullOrEmpty(ua) ? ua : "Unbekannt";
 
-						var type = ulong.Parse(ls.Item(i).SelectSingleNode("TYPE").InnerText);
-						listener.Type = (T)Convert.ChangeType(type, typeof(T));
+							var type = ulong.Parse(ls.Item(i).SelectSingleNode("TYPE").InnerText);
+							listener.Type = (T)Convert.ChangeType(type, typeof(T));
 
-						listener.UID = (T)Convert.ChangeType(uid, typeof(T));
-						listener.RREFERES = ls.Item(i).SelectSingleNode("REFERER").InnerText;
+							listener.UID = uid;
 
-						listener.City = geodb.City(listener.IP).City.Name;
-						listener.Country = geodb.City(listener.IP).Country.Name;
+							var referer = ls.Item(i).SelectSingleNode("REFERER").InnerText;
+							listener.RREFERES = string.IsNullOrEmpty(referer) ? string.Empty : referer;
 
-						listeners.Add((T)Convert.ChangeType(uid, typeof(T)), listener);
+							var city = geodb.City(listener.IP).City.Name;
+							listener.City = string.IsNullOrEmpty(city) ? string.Empty : city;
+
+							var country = geodb.City(listener.IP).Country.Name;
+							listener.Country = string.IsNullOrEmpty(country) ? string.Empty : country;
+
+							listeners.Add(uid, listener);
+						}
 					}
 				}
 			}
@@ -112,15 +126,24 @@ namespace Namiono
 				{
 					try
 					{
-						ParseData(e.Result);
+						if (e.Cancelled)
+							return;
+
+						var result = e.Result;
+						if (!string.IsNullOrEmpty(result))
+							ParseData(result);
 					}
 					catch (Exception ex)
 					{
-						Console.WriteLine(e.Error);
+						if (ex.InnerException != null)
+							Console.WriteLine(ex.InnerException);
+
+						Console.WriteLine(ex.Message);
 					}
 				};
 
-				wc.DownloadStringAsync(new Uri(string.Format("http://{0}:{1}/admin.cgi?mode=viewxml&pass={2}&sid={3}", hostname, port, password, id)));
+				var u = new Uri(string.Format("http://{0}:{1}/admin.cgi?mode=viewxml&pass={2}&sid={3}", hostname, port, password, id));
+				wc.DownloadStringAsync(u);
 			}
 		}
 
@@ -139,161 +162,98 @@ namespace Namiono
 
 		public string ContentType
 		{
-			get
-			{
-				return contentType;
-			}
+			get => contentType;
 
-			private set
-			{
-				contentType = value;
-			}
+			private set => contentType = value;
 		}
 
 		public string StreamPath
 		{
-			get
-			{
-				return streamPath;
-			}
+			get => streamPath;
 
-			private set
-			{
-				streamPath = value;
-			}
+			private set => streamPath = value;
 		}
 
 		public string ServerURL
 		{
-			get
-			{
-				return serverUrl;
-			}
+			get => serverUrl;
 
-			private set
-			{
-				serverUrl = value;
-			}
+			private set => serverUrl = value;
 		}
 
 		public bool Active
 		{
-			get
-			{
-				return active;
-			}
+			get => active;
 
-			set
-			{
-				active = value;
-			}
+			private set => active = value;
 		}
 
 		public string Clients(T userid)
 		{
-				var box = Dispatcher.ReadTemplate(ref fs, "content_box");
 
-				var tmp = "<div class=\"tr sp_day\"><div class=\"th  sc_col_id\">Dauer (HH:mm)</div>" +
-					"<div class=\"th sc_col_ip\">IP</div><div class=\"th sc_col_ua\">Player</div></div>";
+			var tmp = "<div class=\"tr sp_day\"><div class=\"th  sc_col_id\">Dauer (HH:mm)</div>" +
+				"<div class=\"th sc_col_ip\">IP</div><div class=\"th sc_col_ua\">Player</div></div>";
 
-				lock (listeners)
-				{
-					if (listeners.Count != 0)
-					{
-						foreach (var l in listeners.Values)
-						{
-							var ctime = Convert.ToInt32((T)Convert.ChangeType(l.ConnectionTime, typeof(T)));
-							var ts = new DateTime(new TimeSpan(ctime / 3600, ctime / 60, ctime / 60 / 60).Ticks).ToString("HH:mm", new CultureInfo("de-DE"));
-
-							tmp += string.Format("<div class=\"tr sp_row\"><div class=\"td sc_col_id\"><h3>{0}</h3></div>" +
-								"<div class=\"td sc_col_ip\"><h3>{1}<br />({3}, {4})</h3></div><div class=\"td sc_col_ua\">{2}</div></div>",
-								  ts, users.CanSeeStreamStats(userid) ? l.IP : IPAddress.None, l.UserAgent, l.Country, l.City);
-						}
-					}
-					else
-						tmp += "<div class=\"tr sp_row\"><p class=\"exclaim\">Zur Zeit keine Zuhörer verfügbar.</p></div>";
-				}
-
-				return box.Replace("[[box-content]]", tmp).Replace("[[box-title]]", "Aktive Zuhörer").Replace("[[content]]", "sc_listeners");
-		}
-
-		public int Listeners
-		{
-			get
+			lock (listeners)
 			{
-				return listeners.Count;
+				if (listeners.Count != 0)
+				{
+					foreach (var l in listeners.Values)
+					{
+						var ctime = Convert.ToInt32((T)Convert.ChangeType(l.ConnectionTime, typeof(T)));
+						var ts = new DateTime(new TimeSpan(ctime / 3600, ctime / 60, ctime / 60 / 60).Ticks).ToString("HH:mm", new CultureInfo("de-DE"));
+
+						tmp += string.Format("<div class=\"tr sp_row\"><div class=\"td sc_col_id\"><h3>{0}</h3></div>" +
+							"<div class=\"td sc_col_ip\"><h3>{1}<br />({3}, {4})</h3></div><div class=\"td sc_col_ua\">{2}</div></div>",
+							  ts, users.CanSeeStreamStats(userid) ? l.IP : IPAddress.None, l.UserAgent, l.Country, l.City);
+					}
+				}
+				else
+					tmp += "<div class=\"tr sp_row\"><p class=\"exclaim\">Zur Zeit keine Zuhörer verfügbar.</p></div>";
 			}
+
+			var box = Dispatcher.ReadTemplate(ref fs, "content_box");
+
+			return box.Replace("[[box-content]]", tmp)
+				.Replace("[[box-title]]", "Aktive Zuhörer")
+				.Replace("[[content]]", "sc_listeners");
 		}
+
+		public int Listeners => listeners.Count;
 
 		public string SongTitle
 		{
-			get
-			{
-				return songTitle;
-			}
+			get => songTitle;
 
-			private set
-			{
-				songTitle = value;
-			}
+			private set => songTitle = value;
 		}
 
 		public string ServerName
 		{
-			get
-			{
-				return serverName;
-			}
+			get => serverName;
 
-			private set
-			{
-				serverName = value;
-			}
+			private set => serverName = value;
 		}
 
 		public XmlDocument XML
 		{
-			get
-			{
-				return xmldoc;
-			}
+			get => xmldoc;
 
-			set
-			{
-				xmldoc = value;
-			}
+			set => xmldoc = value;
 		}
 
-		public override string OutPut
-		{
-			get
-			{
-				return output;
-			}
-		}
+		public override string OutPut => output;
 
 		public override T ID
 		{
-			get
-			{
-				return id;
-			}
+			get => id;
 
-			set
-			{
-				id = value;
-			}
+			set => id = value;
 		}
 
-		public override void Start()
-		{
-			Update();
-		}
+		public override void Start() =>	Update();
 
-		public override void Close()
-		{
-			listeners.Clear();
-		}
+		public override void Close() => listeners.Clear();
 
 		public override void Update()
 		{
@@ -302,10 +262,7 @@ namespace Namiono
 			x.Start();
 		}
 
-		public override void Heartbeat()
-		{
-			Update();
-		}
+		public override void Heartbeat() => Update();
 	}
 
 	public struct Listener<T>
@@ -326,42 +283,25 @@ namespace Namiono
 
 		public IPAddress IP
 		{
-			get { return ipaddress; }
-			set { ipaddress = value; }
+			get => ipaddress;
+			set => ipaddress = value;
 		}
 
 		public string Country
 		{
-			get
-			{
-				return country;
-			}
-
-			set
-			{
-				country = value;
-			}
+			get => country;
+			set => country = value;
 		}
 
 		public string City
 		{
-			get
-			{
-				return city;
-			}
-
-			set
-			{
-				city = value;
-			}
+			get => city;
+			set => city = value;
 		}
 
 		public string UserAgent
 		{
-			get
-			{
-				return useragent;
-			}
+			get => useragent;
 
 			set
 			{
@@ -413,38 +353,38 @@ namespace Namiono
 
 		public T ConnectionTime
 		{
-			get { return connectionTime; }
-			set { connectionTime = value; }
+			get => connectionTime;
+			set => connectionTime = value;
 		}
 
 		public T UID
 		{
-			get { return uid; }
-			set { uid = value; }
+			get => uid;
+			set => uid = value;
 		}
 
 		public T GRID
 		{
-			get { return grid; }
-			set { grid = value; }
+			get => grid;
+			set => grid = value;
 		}
 
 		public T Type
 		{
-			get { return type; }
-			set { type = value; }
+			get => type;
+			set => type = value;
 		}
 
 		public string RREFERES
 		{
-			get { return referer; }
-			set { referer = value; }
+			get => referer;
+			set => referer = value;
 		}
 
 		public T Triggers
 		{
-			get { return triggers; }
-			set { triggers = value; }
+			get => triggers;
+			set => triggers = value;
 		}
 	}
 }

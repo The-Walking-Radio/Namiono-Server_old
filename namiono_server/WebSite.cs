@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Linq;
 using System.Threading.Tasks;
+using namiono;
 
 namespace Namiono
 {
@@ -22,6 +23,7 @@ namespace Namiono
 		Filesystem fs;
 		SQLDatabase<T> db;
 		Users<T> users;
+		Newsticker<T> news;
 
 		Dictionary<Guid, Sendeplan<T>> SendePlaene;
 		Dictionary<string, ShoutcastServer<T>> ShoutcastServers;
@@ -40,6 +42,7 @@ namespace Namiono
 			fs = new Filesystem(Path.Combine(Environment.CurrentDirectory, string.Format("{0}_website", name)));
 
 			users = new Users<T>(ref db);
+			news = new Newsticker<T>(ref fs, ref db);
 
 			if (this.realm == Realm.Public)
 			{
@@ -70,6 +73,21 @@ namespace Namiono
 				{
 					switch (e.Provider)
 					{
+						case WebServer.Provider.Newsticker:
+							switch (e.Action)
+							{
+								case WebServer.SiteAction.None:
+									break;
+								case WebServer.SiteAction.Show:
+									var resp_newsticker = news.GetNews();
+									e.Context.Response.StatusCode = 200;
+									e.Context.Response.StatusDescription = "OK";
+									e.Context.Response.ContentType = "text/html";
+
+									ws.Send(ref resp_newsticker, ref e.Context, Encoding.UTF8);
+									break;
+							}
+							break;
 						case WebServer.Provider.Admin:
 							switch (e.Action)
 							{
@@ -88,14 +106,16 @@ namespace Namiono
 								case WebServer.SiteAction.Show:
 									if (e.Context.Request.Headers["UAgent"] == "Namiono")
 									{
-										if (e.Params.ContainsKey("admincp") && e.Params["admincp"] == "yes" && users.CanSeeAdminCenter(userid))
+										if (e.Params.ContainsKey("admincp") && e.Params["admincp"] == "yes"
+										&& users.CanSeeAdminCenter(userid))
 										{
 											var site_resp = Dispatcher.ReadTemplate(ref fs, "content-box")
 											.Replace("[[content]]", "admincp").Replace("[[box-title]]", "Verwaltungs-Center");
 
 											if (users.CanSeeSiteSettings(userid))
 											{
-												var site_admincp_site = Dispatcher.ReadTemplate(ref fs, "site-admincp-site").Replace("[[content]]", "admincp_site");
+												var site_admincp_site = Dispatcher.ReadTemplate(ref fs, "site-admincp-site")
+												.Replace("[[content]]", "admincp_site");
 												site_resp = site_resp.Replace("[[box-content]]", site_admincp_site);
 											}
 
@@ -107,13 +127,15 @@ namespace Namiono
 										}
 										else
 										{
-											var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
+											var err = ws.SendErrorDocument(this.title, 403,
+												"Request-Headers not valid!", ref e.Context);
 											ws.Send(ref err, ref e.Context);
 										}
 									}
 									else
 									{
-										var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
+										var err = ws.SendErrorDocument(this.title, 403,
+											"Request-Headers not valid!", ref e.Context);
 										ws.Send(ref err, ref e.Context);
 									}
 
@@ -128,6 +150,19 @@ namespace Namiono
 									break;
 							}
 
+							break;
+						case WebServer.Provider.Navigation:
+							switch (e.Action)
+							{
+								case WebServer.SiteAction.Show:
+										var resp_userlist = Build_navigation((T)Convert.ChangeType(users.GetUserLevelbyID(userid), typeof(T)), userid);
+										e.Context.Response.StatusCode = 200;
+										e.Context.Response.StatusDescription = "OK";
+										e.Context.Response.ContentType = "text/html";
+
+										ws.Send(ref resp_userlist, ref e.Context, Encoding.UTF8);
+									break;
+							}
 							break;
 						case WebServer.Provider.Shoutcast:
 							switch (e.Action)
@@ -179,13 +214,13 @@ namespace Namiono
 													output += sc.Members[(T)Convert.ChangeType(int.Parse(e.Params["sid"]), typeof(T))].Clients(userid);
 											}
 										}
-                                        else
-                                        {
-                                            var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
-                                            ws.Send(ref err, ref e.Context);
-                                        }
+										else
+										{
+											var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
+											ws.Send(ref err, ref e.Context);
+										}
 
-                                        e.Context.Response.StatusCode = 200;
+										e.Context.Response.StatusCode = 200;
 										e.Context.Response.StatusDescription = "OK";
 										e.Context.Response.ContentType = "text/html";
 
@@ -211,14 +246,13 @@ namespace Namiono
 												e.Context.Response.StatusCode = 200;
 												e.Context.Response.StatusDescription = "OK";
 												e.Context.Response.ContentType = "text/html";
+												ws.Send(ref resp, ref e.Context, Encoding.UTF8);
 											}
 											else
 											{
-												e.Context.Response.StatusCode = 200;
-												e.Context.Response.StatusDescription = "Process failed to start!";
-												e.Context.Response.ContentType = "text/html";
+												var err = ws.SendErrorDocument(this.title, 403, "Process exited with error code: 1'", ref e.Context);
+												ws.Send(ref err, ref e.Context);
 											}
-											ws.Send(ref resp, ref e.Context, Encoding.UTF8);
 										}
 										else
 										{
@@ -241,7 +275,7 @@ namespace Namiono
 											lock (ShoutcastServers)
 											{
 												foreach (var sc in ShoutcastServers.Values)
-													output += sc.ListCurrentStreams();
+													output += sc?.ListCurrentStreams();
 											}
 
 											e.Context.Response.StatusCode = 200;
@@ -250,12 +284,12 @@ namespace Namiono
 
 											ws.Send(ref output, ref e.Context, Encoding.UTF8);
 										}
-                                        else
-                                        {
-                                            var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
-                                            ws.Send(ref err, ref e.Context);
-                                        }
-                                    }
+										else
+										{
+											var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
+											ws.Send(ref err, ref e.Context);
+										}
+									}
 									else
 									{
 										var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
@@ -265,8 +299,8 @@ namespace Namiono
 								default:
 									lock (ShoutcastServers)
 									{
-										if (e.Params.ContainsKey("player") && e.Params.ContainsKey("id") && e.Params.ContainsKey("serverid") &&
-											ShoutcastServers.ContainsKey(e.Params["serverid"]))
+										if (e.Params.ContainsKey("player") && e.Params.ContainsKey("id") &&
+										e.Params.ContainsKey("serverid") && ShoutcastServers.ContainsKey(e.Params["serverid"]))
 										{
 											var sc = ShoutcastServers[e.Params["serverid"]];
 
@@ -453,7 +487,9 @@ namespace Namiono
 												{
 													if (SendePlaene.ContainsKey(spident))
 													{
-														if (SendePlaene[spident].Update_SPEntry(e.Params["day"], e.Params["hour"], e.Params["ts"], e.Params["user"], e.Params["desc"], userid))
+														if (SendePlaene[spident].Update_SPEntry(e.Params["day"],
+															e.Params["hour"], e.Params["ts"], e.Params["user"],
+															e.Params["desc"], userid))
 														{
 															if (SendePlaene.Count >= 1)
 															{
@@ -493,14 +529,16 @@ namespace Namiono
 										case WebServer.HTTPMethod.GET:
 											if (e.Context.Request.Headers["UAgent"] == "Namiono")
 											{
-												if (e.Params.ContainsKey("day") && e.Params.ContainsKey("hour") && e.Params.ContainsKey("ts") && e.Params.ContainsKey("spident"))
+												if (e.Params.ContainsKey("day") && e.Params.ContainsKey("hour") &&
+												e.Params.ContainsKey("ts") && e.Params.ContainsKey("spident"))
 												{
 													var resp = string.Empty;
 													var spident = Guid.Parse(e.Params["spident"]);
 
 													if (SendePlaene.ContainsKey(spident))
 													{
-														resp = SendePlaene[spident].Edit_Form(int.Parse(e.Params["day"]), byte.Parse(e.Params["hour"]), double.Parse(e.Params["ts"]), userid);
+														resp = SendePlaene[spident].Edit_Form(int.Parse(e.Params["day"]),
+															byte.Parse(e.Params["hour"]), double.Parse(e.Params["ts"]), userid);
 														if (!string.IsNullOrEmpty(resp))
 														{
 															e.Context.Response.StatusCode = 200;
@@ -542,9 +580,11 @@ namespace Namiono
 								case WebServer.SiteAction.Remove:
 									if (e.Context.Request.Headers["UAgent"] == "Namiono")
 									{
-										if (e.Params.ContainsKey("day") && e.Params.ContainsKey("hour") && e.Params.ContainsKey("ts") && e.Params.ContainsKey("spident"))
+										if (e.Params.ContainsKey("day") && e.Params.ContainsKey("hour") &&
+										e.Params.ContainsKey("ts") && e.Params.ContainsKey("spident"))
 										{
-											if (!string.IsNullOrEmpty(e.Params["day"]) && !string.IsNullOrEmpty(e.Params["hour"]) && !string.IsNullOrEmpty(e.Params["ts"]))
+											if (!string.IsNullOrEmpty(e.Params["day"]) &&
+											!string.IsNullOrEmpty(e.Params["hour"]) && !string.IsNullOrEmpty(e.Params["ts"]))
 											{
 												var resp = string.Empty;
 
@@ -556,7 +596,7 @@ namespace Namiono
 														e.Context.Response.StatusCode = 200;
 														e.Context.Response.StatusDescription = "OK";
 
-														resp = SendePlaene[spident].GetCurWeekPlan(userid);
+														resp = SendePlaene[spident]?.GetCurWeekPlan(userid);
 													}
 													else
 													{
@@ -623,7 +663,7 @@ namespace Namiono
 														resp = Dispatcher.ReadTemplate(ref fs, "sp_select").Replace("[#SPIDENT_LIST#]", output_sp);
 													}
 
-													resp += SendePlaene[spident].GetCurWeekPlan(userid);
+													resp += SendePlaene[spident]?.GetCurWeekPlan(userid);
 												}
 											}
 											else
@@ -658,6 +698,23 @@ namespace Namiono
 						case WebServer.Provider.User:
 							switch (e.Action)
 							{
+								case WebServer.SiteAction.Teamlist:
+									if (e.Context.Request.Headers["UAgent"] == "Namiono")
+									{
+										var resp = users.GenerateTeamlist(ref fs);
+
+										e.Context.Response.StatusCode = 200;
+										e.Context.Response.StatusDescription = "OK";
+
+										e.Context.Response.ContentType = "text/html";
+										ws.Send(ref resp, ref e.Context, Encoding.UTF8);
+									}
+									else
+									{
+										var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
+										ws.Send(ref err, ref e.Context);
+									}
+									break;
 								case WebServer.SiteAction.Register:
 									if (e.Context.Request.Headers["UAgent"] == "Namiono")
 									{
@@ -709,15 +766,57 @@ namespace Namiono
 								case WebServer.SiteAction.Edit:
 									if (e.Context.Request.Headers["UAgent"] == "Namiono")
 									{
-										var resp = users.GetProfile(ref fs, userid);
+										var resp = string.Empty;
 
-										e.Context.Response.StatusCode = 200;
-										e.Context.Response.StatusDescription = "OK";
+										switch (e.Method)
+										{
+											case WebServer.HTTPMethod.POST:
+												var profile_id_post = (T)Convert.ChangeType(e.Params["userid"], typeof(T));
+												resp = users.GetProfile(ref fs, profile_id_post, userid);
+												if (e.Params.ContainsKey("userid"))
+												{
+													if (e.Params.ContainsKey("username"))
+														if (!string.IsNullOrEmpty(e.Params["username"]))
+															users.UpdateUserName((T)Convert.ChangeType(e.Params["userid"], typeof(T)), e.Params["username"]);
 
-										e.Context.Response.ContentType = "text/html";
-										ws.Send(ref resp, ref e.Context, Encoding.UTF8);
+													if (e.Params.ContainsKey("password"))
+														if (!string.IsNullOrEmpty(e.Params["password"]))
+															users.UpdatePassword((T)Convert.ChangeType(e.Params["userid"], typeof(T)), e.Params["password"]);
+
+													if (e.Params.ContainsKey("ismod"))
+														if (!string.IsNullOrEmpty(e.Params["ismod"]))
+															users.SetModeratorState((T)Convert.ChangeType(e.Params["userid"], typeof(T)), e.Params["ismod"]);
+
+													e.Context.Response.StatusCode = 200;
+													e.Context.Response.StatusDescription = "OK";
+
+													e.Context.Response.ContentType = "text/html";
+													ws.Send(ref resp, ref e.Context, Encoding.UTF8);
+												}
+												else
+												{
+													var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
+													e.Context.Response.ContentType = "text/html";
+													ws.Send(ref err, ref e.Context);
+												}
+												break;
+											case WebServer.HTTPMethod.GET:
+												var profile_id_get = (T)Convert.ChangeType(e.Params["uid"], typeof(T));
+												resp = users.GetProfile(ref fs, profile_id_get, userid);
+												e.Context.Response.StatusCode = 200;
+												e.Context.Response.StatusDescription = "OK";
+
+												e.Context.Response.ContentType = "text/html";
+												ws.Send(ref resp, ref e.Context, Encoding.UTF8);
+												break;
+										}
 									}
-
+									else
+									{
+										var err = ws.SendErrorDocument(this.title, 403, "Request-Headers not valid!", ref e.Context);
+										e.Context.Response.ContentType = "text/html";
+										ws.Send(ref err, ref e.Context);
+									}
 									break;
 								case WebServer.SiteAction.Remove:
 									if (e.Context.Request.Headers["UAgent"] == "Namiono")
@@ -761,9 +860,9 @@ namespace Namiono
 										var edit_resp = string.Empty;
 
 										var profile_id = (T)Convert.ChangeType(uint.Parse(uid), typeof(T));
-										if (users.CanEditUsers(userid) || string.Format("{0}",profile_id) == string.Format("{0}", userid))
+										if (users.CanEditUsers(userid) || string.Format("{0}", profile_id) == string.Format("{0}", userid))
 										{
-											edit_resp = users.GetProfile(ref fs, profile_id);
+											edit_resp = users.GetProfile(ref fs, profile_id, userid);
 											if (!string.IsNullOrEmpty(edit_resp))
 											{
 												e.Context.Response.StatusCode = 200;
@@ -794,9 +893,11 @@ namespace Namiono
 								case WebServer.SiteAction.Logout:
 									if (e.Context.Request.Headers["UAgent"] == "Namiono")
 									{
-										var cookie = new Cookie("User", "0", "/");
-										cookie.Expired = true;
-										cookie.Expires = DateTime.Now.AddDays(-1);
+										var cookie = new Cookie("User", "0", "/")
+										{
+											Expired = true,
+											Expires = DateTime.Now.AddDays(-1)
+										};
 
 										e.Context.Response.SetCookie(cookie);
 										e.Context.Response.StatusCode = 200;
@@ -896,7 +997,10 @@ namespace Namiono
 						var t = e.Params.ContainsKey("sid") ? int.Parse(e.Params["sid"]) : 1;
 						var data = new byte[0];
 
-						var sc = (from s in ShoutcastServers.Values where s.IsStateServer select s).FirstOrDefault();
+						var sc = (from s in ShoutcastServers.Values
+								  where s.IsStateServer
+								  select s).FirstOrDefault();
+
 						if (sc != null)
 						{
 							data = Encoding.UTF8.GetBytes(sc.Members[(T)Convert.ChangeType(t, typeof(T))].XML.OuterXml);
@@ -914,7 +1018,8 @@ namespace Namiono
 					}
 
 					var site = (e.RequestType == WebServer.RequestType.sync) ?
-						GenerateSite(e.Path, ref e.Context, p, userid) : Build_content_Boxes(p, userid);
+						GenerateSite(e.Path, ref e.Context, p, userid) :
+						Build_content_Boxes(p, userid);
 
 					e.Context.Response.StatusCode = 200;
 					e.Context.Response.StatusDescription = "OK";
@@ -927,23 +1032,25 @@ namespace Namiono
 		void LoadSendePlan()
 		{
 			var sp_sendeplaene = db.SQLQuery<uint>("SELECT spident FROM sendeplan_ident");
-			if (sp_sendeplaene.Count != 0)
-			{
-				lock (SendePlaene)
-				{
-					for (var i = uint.MinValue; i < sp_sendeplaene.Count; i++)
-					{
-						if (string.IsNullOrEmpty(sp_sendeplaene[i]["spident"]))
-							continue;
+			if (sp_sendeplaene.Count == 0)
+				return;
 
-						var guid = Guid.Parse(sp_sendeplaene[i]["spident"]);
-						if (!SendePlaene.ContainsKey(guid))
-						{
-							var settings = new Sendeplan<T>.Sp_settings<T>();
-							SendePlaene.Add(guid, new Sendeplan<T>(guid, string.Format("Sendeplan {0}", i), ref db, ref fs, ref users,
-							  ref settings));
-						}
-					}
+			lock (SendePlaene)
+			{
+				for (var i = uint.MinValue; i < sp_sendeplaene.Count; i++)
+				{
+					var spid = sp_sendeplaene[i]["spident"];
+					if (string.IsNullOrEmpty(spid))
+						continue;
+
+					var guid = Guid.Parse(spid);
+
+					if (SendePlaene.ContainsKey(guid))
+						continue;
+
+					var settings = new Sendeplan<T>.Sp_settings();
+					SendePlaene.Add(guid, new Sendeplan<T>(guid, "Sendeplan",
+						ref db, ref fs, ref users, ref settings));
 				}
 			}
 		}
@@ -951,20 +1058,24 @@ namespace Namiono
 		void LoadShoutcastServers()
 		{
 			var sc_servers = db.SQLQuery<uint>("SELECT * FROM shoutcast");
-			if (sc_servers.Count != 0)
+			if (sc_servers.Count == 0)
+				return;
+
+			lock (ShoutcastServers)
 			{
-				lock (ShoutcastServers)
+				for (var i = uint.MinValue; i < sc_servers.Count; i++)
 				{
-					for (var i = uint.MinValue; i < sc_servers.Count; i++)
-						if (!ShoutcastServers.ContainsKey(sc_servers[i]["id"]))
-						{
-							var sc = new ShoutcastServer<T>(ref db, ref fs, ref users, sc_servers[i]["id"], sc_servers[i]["hostname"],
-								ushort.Parse(sc_servers[i]["port"]), sc_servers[i]["password"], sc_servers[i]["stateserver"] != "0", sc_servers[i]["servertype"] == "2");
+					var id = sc_servers[i]["id"];
+					if (ShoutcastServers.ContainsKey(id))
+						continue;
 
-							sc.ShoutcastStarted += (sender, e) => Console.WriteLine(e.Message);
+					var sc = new ShoutcastServer<T>(ref db, ref fs, ref users, id, sc_servers[i]["hostname"],
+						ushort.Parse(sc_servers[i]["port"]), sc_servers[i]["password"],
+						sc_servers[i]["stateserver"] != "0", sc_servers[i]["servertype"] == "2");
 
-							ShoutcastServers.Add(sc_servers[i]["id"], sc);
-						}
+					sc.ShoutcastStarted += (sender, e) => Console.WriteLine(e.Message);
+
+					ShoutcastServers.Add(id, sc);
 				}
 			}
 		}
@@ -996,18 +1107,24 @@ namespace Namiono
 			var output = string.Empty;
 			var content_boxes = db.SQLQuery<uint>(string.Format("SELECT * FROM content WHERE position='content' AND site='{0}'", site));
 
-			if (content_boxes.Count != 0)
-			{
-				for (var i = uint.MinValue; i < content_boxes.Count; i++)
-				{
-					var tpl = Dispatcher.ReadTemplate(ref fs, "content-box");
-					tpl = tpl.Replace("[[box-title]]", content_boxes[i]["title"]);
-					tpl = tpl.Replace("[[box-content]]", content_boxes[i]["payload"]);
-					tpl = tpl.Replace("[[position]]", content_boxes[i]["position"]);
-					tpl = tpl.Replace("[[content]]", content_boxes[i]["tag"]);
+			if (content_boxes.Count == 0)
+				return output;
 
-					output += tpl;
-				}
+			for (var i = uint.MinValue; i < content_boxes.Count; i++)
+			{
+				var tpl = Dispatcher.ReadTemplate(ref fs, "content-box");
+
+
+				tpl = tpl.Replace("[[box-title]]", content_boxes[i]["title"]);
+				tpl = tpl.Replace("[[box-content]]", content_boxes[i]["payload"]);
+
+				if (content_boxes[i]["tag"] == "news")
+					tpl = tpl.Replace("[[content-news]]", news.GetNews());
+
+				tpl = tpl.Replace("[[position]]", content_boxes[i]["position"]);
+				tpl = tpl.Replace("[[content]]", content_boxes[i]["tag"]);
+
+				output += tpl;
 			}
 
 			return output;
@@ -1028,7 +1145,8 @@ namespace Namiono
 					if (string.IsNullOrEmpty(cook))
 						cook = "0";
 
-					output = (cook != "0") ? users.GetUserInfo((T)Convert.ChangeType(ulong.Parse(cook), typeof(T)), ref fs) : users.GetLoginForm(ref fs);
+					output = (cook != "0") ? users.GetUserInfo((T)Convert.ChangeType(ulong.Parse(cook),
+						typeof(T)), ref fs) : users.GetLoginForm(ref fs);
 				}
 			}
 
@@ -1041,15 +1159,16 @@ namespace Namiono
 					if (string.IsNullOrEmpty(boxes[i]["tag"]))
 						continue;
 
-					if (boxes[i]["tag"] == "shoutcast" && ShoutcastServers.Count == 0)
-						continue;
 
-					tpl = tpl.Replace("[[box-title]]", boxes[i]["title"])
-						.Replace("[[box-content]]", boxes[i]["payload"]).Replace("[[content]]", boxes[i]["tag"]);
 
+					var payload = boxes[i]["payload"];
+					tpl = tpl.Replace("[[box-title]]", boxes[i]["title"]).Replace("[[box-content]]",
+						payload).Replace("[[content]]", boxes[i]["tag"]);
 					if (boxes[i]["tag"] == "shoutcast")
 						tpl = tpl.Replace("[[content-shoutcast]]", GenerateShoutcastOutput(userid));
 
+					if (boxes[i]["tag"] == "news")
+						tpl = tpl.Replace("[[content-news]]", news.GetNews());
 					output += tpl;
 
 					output = output.Replace("[[position]]", position);
@@ -1061,15 +1180,14 @@ namespace Namiono
 
 		string GenerateShoutcastOutput(T userid)
 		{
-			var sc_output = string.Empty;
+			var sc_output = "<p class=\"exclaim\">Keine Server gefunden!</p>";
 
 			if (ShoutcastServers.Count != 0)
 			{
+				sc_output = string.Empty;
 				foreach (var sc in ShoutcastServers.Values)
-					sc_output += sc.OutPut(userid);
+					sc_output += sc?.OutPut(userid);
 			}
-			else
-				sc_output = "<p class=\"exclaim\">Keine Server gefunden!</p>";
 
 			return sc_output;
 		}
@@ -1087,14 +1205,14 @@ namespace Namiono
 			if (!readHeader)
 				site = site.Replace("[[site-header]]", string.Empty);
 
-			site = site.Replace("[[content-nav]]", navigation);
-			site = site.Replace("[[content-aside]]", Build_side_boxes("aside", ref context, userid));
-			site = site.Replace("[[content-content]]", Build_content_Boxes(page, userid));
 
 			while (site.Contains("[[") && site.Contains("]]"))
 			{
 				var tplname = Dispatcher.GetTPLName(site);
 				var content = Dispatcher.ReadTemplate(ref fs, tplname);
+				site = site.Replace("[[content-nav]]", navigation);
+				site = site.Replace("[[content-aside]]", Build_side_boxes("aside", ref context, userid));
+				site = site.Replace("[[content-content]]", Build_content_Boxes(page, userid));
 				site = site.Replace(string.Format("[[{0}]]", tplname), content);
 			}
 
@@ -1107,7 +1225,7 @@ namespace Namiono
 			site = site.Replace("[#SITE_TITLE#]", this.title);
 			site = site.Replace("[#APPNAME#]", "Namiono");
 #if DEBUG
-			site = site.Replace("[#DEBUG_WARN#]", "<p class=\"developer\">Debug-Version! Die Version befindet sich in Entwicklung. Fehler sind zu erwarten.</p>");
+			site = site.Replace("[#DEBUG_WARN#]", "<p class=\"developer\">Debug-Version! Die Version befindet sich (noch) in Entwicklung. Fehler sind zu erwarten.</p>");
 #else
 			site = site.Replace("[#DEBUG_WARN#]", string.Empty);
 #endif
@@ -1163,6 +1281,7 @@ namespace Namiono
 					sp?.Close();
 			}
 
+			news?.Close();
 			users?.Close();
 			ws?.Close();
 		}
@@ -1181,6 +1300,7 @@ namespace Namiono
 				SendePlaene.Clear();
 			}
 
+			news.Dispose();
 			users.Dispose();
 			ws.Dispose();
 		}

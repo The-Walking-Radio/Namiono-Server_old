@@ -34,14 +34,21 @@ namespace Namiono
 			{
 				using (var prc = new Process())
 				{
-					prc.StartInfo.Arguments = arg;
-					prc.StartInfo.FileName = path;
+					try
+					{
+						prc.StartInfo.Arguments = arg;
+						prc.StartInfo.FileName = path;
 
-					prc.Start();
+						prc.Start();
 
-					prc.WaitForExit();
+						prc.WaitForExit();
 
-					result = prc.ExitCode;
+						result = prc.ExitCode;
+					}
+					catch (Exception)
+					{
+						result = 1;
+					}
 				}
 			}
 			catch (Exception ex)
@@ -126,12 +133,6 @@ namespace Namiono
 			await Task.Run(() => Write(path, tmp, offset, count));
 		}
 
-		public string Root
-		{
-			get
-			{
-				return rootDir;
-			}
-		}
+		public string Root => rootDir;
 	}
 }

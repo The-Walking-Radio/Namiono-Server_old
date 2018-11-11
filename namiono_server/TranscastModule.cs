@@ -17,7 +17,8 @@ namespace Namiono
 		string username;
 		CredentialCache credentials;
 
-		public override Dictionary<T, TranscastSource<T>> Members => new Dictionary<T, TranscastSource<T>>();
+		public override Dictionary<T, TranscastSource<T>> Members
+			=> new Dictionary<T, TranscastSource<T>>();
 
 		public TranscastClients(string hostname, ushort port, string password, string username)
 		{
@@ -26,8 +27,10 @@ namespace Namiono
 			this.port = port;
 			this.username = username;
 			this.credentials = new CredentialCache();
-			this.credentials.Add(new Uri(string.Format("http://{0}:{1}/api", hostname, this.port)), "Basic",
-				new NetworkCredential(this.username,this.password));
+			this.credentials.Add(new Uri(string.Format("http://{0}:{1}/api", this.hostname, this.port)), "Basic",
+				new NetworkCredential(this.username, this.password));
+
+			Download();
 		}
 
 		public void Download()
@@ -35,23 +38,27 @@ namespace Namiono
 			var postdata = "op=test";
 			postdata += "&seq=12";
 
-			var req = WebRequest.CreateHttp(new Uri(string.Format("http://{0}:{1}/api", hostname, this.port)));
-			req.UseDefaultCredentials = false;
-			req.Credentials = this.credentials;
+			var req = WebRequest.CreateHttp(new Uri(string.Format("http://{0}:{1}/api", hostname, port)));
+			req.UseDefaultCredentials = true;
+			req.Credentials = credentials;
 			req.ContentType = "application/x-www-form-urlencoded; charset=UTF-8";
-			req.UserAgent = "Mozilla";
+			req.UserAgent = "Mozilla 5.0";
 			req.AllowAutoRedirect = true;
 			req.Method = "POST";
+
 			var reqstream = req.GetRequestStream();
+			if (reqstream == null)
+				return;
 
 			var data = Encoding.UTF8.GetBytes(postdata);
-			reqstream.WriteAsync(data, 0, data.Length);
+			reqstream.Write(data, 0, data.Length);
 			reqstream.Close();
 
 			using (var resp = (HttpWebResponse)req.GetResponse())
 			{
-				var sr = new StreamReader(resp.GetResponseStream()).ReadToEnd();
-				Console.WriteLine(sr);
+				var sr = new StreamReader(resp.GetResponseStream());
+				Console.WriteLine(sr.ReadToEnd());
+				sr.Close();
 			}
 		}
 	}

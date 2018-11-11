@@ -23,6 +23,7 @@ namespace Namiono
 		Filesystem fs;
 		TranscastClients<T> autodj;
 		string serverid;
+		string uaid;
 
 		public enum ServerType
 		{
@@ -47,14 +48,19 @@ namespace Namiono
 			string hostname, ushort port, string password, bool isStateServer, bool transcastNeeded)
 		{
 			this.db = db;
+			this.uaid = Guid.NewGuid().ToString();
+
 			if (transcastNeeded)
 			{
 				var tc = this.db.SQLQuery<uint>("SELECT relay_host, relay_port, relay_admin, relay_pass FROM shoutcast");
 				if (tc.Count != 0)
 				{
 					for (var i = uint.MinValue; i < tc.Count; i++)
-						this.autodj = new TranscastClients<T>(tc[i]["relay_host"],
+					{
+						autodj = new TranscastClients<T>(tc[i]["relay_host"],
 							ushort.Parse(tc[i]["relay_port"]), tc[i]["relay_pass"], tc[i]["relay_admin"]);
+						Download(ref autodj);
+					}
 				}
 			}
 
@@ -75,9 +81,11 @@ namespace Namiono
 		public string Webplayer(T id)
 		{
 			var player_output = "<audio controls=\"\" preload=\"none\" muted=\"yes\" class=\"player_control\">\n";
+			var strPath = members[id].StreamPath;
+			var ctype = members[id].ContentType;
 
 			player_output += string.Format("<source src=\"{0}\" type=\"{1}\" />\n",
-				members[id].StreamPath, members[id].ContentType);
+				strPath, ctype);
 
 			player_output += "Not supported!</audio>\n";
 
@@ -94,6 +102,9 @@ namespace Namiono
 			{
 				foreach (var member in members.Values)
 				{
+					if (member == null)
+						continue;
+
 					if (!member.Active)
 						continue;
 
@@ -102,6 +113,7 @@ namespace Namiono
 
 					var nav_links = db.SQLQuery<uint>("SELECT * FROM navigation WHERE target ='playlist'");
 					playerOutput += "<ul>";
+
 					if (nav_links.Count != 0)
 					{
 						for (var i = uint.MinValue; i < nav_links.Count; i++)
@@ -126,13 +138,7 @@ namespace Namiono
 			return playerOutput;
 		}
 
-		public override Dictionary<T, ShoutcastStream<T>> Members
-		{
-			get
-			{
-				return members;
-			}
-		}
+		public override Dictionary<T, ShoutcastStream<T>> Members => members;
 
 		void Download(ref TranscastClients<T> source)
 		{
@@ -151,15 +157,12 @@ namespace Namiono
 					}
 					catch (Exception ex)
 					{
-						if (ex.InnerException != null)
-							Console.WriteLine(ex.InnerException);
-
 						Console.WriteLine(ex.Message);
 					}
 				};
 
 				wc.Headers.Add("Accept", "text/xml");
-				wc.Headers.Add("User-Agent", string.Format("Namiono - DNAS Client ({0})", Guid.NewGuid().ToString()));
+				wc.Headers.Add("User-Agent", string.Format("Namiono - DNAS Client ({0})", this.uaid));
 
 				wc.Encoding = Encoding.UTF8;
 				wc.DownloadStringAsync(scURL);
@@ -191,21 +194,21 @@ namespace Namiono
 							var id = (T)Convert.ChangeType(i, typeof(T));
 							lock (members)
 							{
-								if (!members.ContainsKey(id))
+								if (members.ContainsKey(id))
+									continue;
+
+								var stream = new ShoutcastStream<T>(ref fs, ref geodb, ref users, hostname, port, password);
+								stream.ID = id;
+
+								if (members.ContainsKey(stream.ID))
+									continue;
+
+								if (!string.IsNullOrEmpty(stream.Clients((T)Convert.ChangeType(users.GetUserIDbyName("Auto DJ"), typeof(T)))))
 								{
-									var stream = new ShoutcastStream<T>(ref fs, ref geodb, ref users, hostname, port, password);
-										stream.ID = id;
-
 									if (!members.ContainsKey(stream.ID))
-									{
-										if (!string.IsNullOrEmpty(stream.Clients((T)Convert.ChangeType(users.GetUserIDbyName("Auto DJ"), typeof(T)))))
-										{
-											if (!members.ContainsKey(stream.ID))
-												members.Add(stream.ID, stream);
+										members.Add(stream.ID, stream);
 
-											members[stream.ID]?.Update();
-										}
-									}
+									members[stream.ID]?.Update();
 								}
 							}
 						}
@@ -233,6 +236,13 @@ namespace Namiono
 					member?.Close();
 			}
 
+			lock (autodj.Members)
+			{
+				foreach (var item in autodj.Members.Values)
+					item.Close();
+			}
+
+			autodj.Members.Clear();
 			members.Clear();
 		}
 
@@ -267,6 +277,12 @@ namespace Namiono
 			}
 
 			geodb.Dispose();
+
+			lock (autodj.Members)
+			{
+				foreach (var item in autodj.Members.Values)
+					item.Dispose();
+			}
 		}
 
 		public void Heartbeat()
@@ -275,23 +291,23 @@ namespace Namiono
 
 			lock (members)
 			{
-				if (members.Count != 0)
-					foreach (var member in members.Values)
-						member?.Heartbeat();
+				if (members.Count == 0)
+					return;
+
+				foreach (var member in members.Values)
+					member?.Heartbeat();
 			}
 		}
 
 		public void Start()
 		{
-			Download(ref autodj);
-
 			lock (members)
 			{
 				foreach (var member in members.Values)
 					member?.Start();
 			}
 
-			var evArgs = new ShoutcastStartedEventArgs(string.Format("Shoutcast listener gestartet ({0}:{1})", this.hostname, this.port));
+			var evArgs = new ShoutcastStartedEventArgs(string.Format("Shoutcast listener gestartet ({0}:{1})", hostname, port));
 			ShoutcastStarted?.Invoke(this, evArgs);
 		}
 

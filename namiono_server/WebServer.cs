@@ -26,10 +26,11 @@ namespace Namiono
 			Logout,
 			Show,
 			MetaData,
+			Teamlist,
 			Clients,
 			Profile,
 			Register,
-			Execute
+			Execute,
 		}
 
 		public enum HTTPMethod
@@ -49,6 +50,9 @@ namespace Namiono
 		{
 			Shoutcast,
 			Sendeplan,
+			Navigation,
+			Newsticker,
+			Teamlist,
 			User,
 			None,
 			Admin
@@ -79,10 +83,7 @@ namespace Namiono
 		{
 			public Exception Exception;
 
-			public ErrorEventArgs(Exception ex)
-			{
-				Exception = ex;
-			}
+			public ErrorEventArgs(Exception ex) => Exception = ex;
 		}
 
 		public event DirectRequestEventHandler DirectRequestReceived;
@@ -103,7 +104,8 @@ namespace Namiono
 		public void Start()
 		{
 			listener.Start();
-			HandleClientConnections(listener);
+
+			HandleClientConnections(listener).ConfigureAwait(false);
 		}
 
 		async Task HandleClientConnections(HttpListener listener)
@@ -114,11 +116,12 @@ namespace Namiono
 			var action = SiteAction.None;
 			var method = (context.Request.HttpMethod == "POST") ?
 				HTTPMethod.POST : HTTPMethod.GET;
+
 			var url = context.Request.Url.PathAndQuery.Split('?');
 			var path = GetContentType(url[0] == "/" ? "/index.html" : url[0], ref context);
 
-			var formdata = GetPostData(ref fs, (url.Length > 1 && method == HTTPMethod.GET) ?
-				string.Format("?{0}", url[1]) : path, ref context, method);
+			var formdata = GetPostData(fs, (url.Length > 1 && method == HTTPMethod.GET) ?
+				string.Format("?{0}", url[1]) : path, context, method).Result;
 
 			var provider = Provider.None;
 
@@ -134,6 +137,12 @@ namespace Namiono
 
 				if (path.EndsWith("/users/"))
 					provider = Provider.User;
+
+				if (path.EndsWith("/navigation/"))
+					provider = Provider.Navigation;
+
+				if (path.EndsWith("/Newsticker/"))
+					provider = Provider.Newsticker;
 
 				if (path.EndsWith("/admincp/"))
 					provider = Provider.Admin;
@@ -188,6 +197,9 @@ namespace Namiono
 				case "execute":
 					action = SiteAction.Execute;
 					break;
+				case "teamlist":
+					action = SiteAction.Teamlist;
+					break;
 				default:
 					if (reqType != RequestType.sync)
 						throw new Exception(string.Format("<void> HandleClientConnections() -> (Get) SiteAction: Got unknown SiteAction \"{0}\"!", act.ToLower()));
@@ -211,20 +223,8 @@ namespace Namiono
 			switch (target)
 			{
 				case RequestTarget.Provider:
-
-					syncEVArgs.Method = method;
-					syncEVArgs.Context = context;
-					syncEVArgs.Params = formdata;
-					syncEVArgs.Provider = provider;
-					syncEVArgs.RequestType = reqType;
-					syncEVArgs.Target = target;
-					syncEVArgs.Path = path.Split('?')[0];
-					syncEVArgs.Action = action;
-
-					DirectRequestReceived(this, syncEVArgs);
-					break;
 				case RequestTarget.Site:
-					if (path == "/" || path.EndsWith(".html") || path.EndsWith(".htm"))
+					if (path.EndsWith("/") || path == "/" || path.EndsWith(".html") || path.EndsWith(".htm"))
 					{
 						syncEVArgs.Method = method;
 						syncEVArgs.Provider = provider;
@@ -257,10 +257,11 @@ namespace Namiono
 					}
 					break;
 				default:
-					throw new Exception(string.Format("<void> HandleClientConnections() -> (Get) RequestTarget: Got unknown request target \"{0}\"!", target.ToString()));
+					throw new Exception(string.Format("<void> HandleClientConnections()" +
+						" -> (Get) RequestTarget: Got unknown request target \"{0}\"!", target.ToString()));
 			}
 
-			await HandleClientConnections(listener);
+			await HandleClientConnections(listener).ConfigureAwait(false);
 		}
 
 		public byte[] SendErrorDocument(string title, int statusCode, string desc, ref HttpListenerContext context)
@@ -279,9 +280,6 @@ namespace Namiono
 
 		public void Send(ref string data, ref HttpListenerContext context, Encoding encoding)
 		{
-			if (data.Contains("[#") || data.Contains("[["))
-				throw new Exception("<void> Send() -> Beim Senden der Antwort, wurden (noch) Template-Tags gefunden!");
-
 			var bytes = encoding.GetBytes(data);
 			Send(ref bytes, ref context);
 		}
@@ -303,19 +301,17 @@ namespace Namiono
 
 		public void Close()
 		{
-			if (listener.IsListening)
-			{
-				listener.Stop();
-				listener.Close();
-			}
+			if (!listener.IsListening)
+				return;
 
-			Dispose();
+			listener.Stop();
+			listener.Close();
 		}
 
 		public void Dispose() => listener.Close();
 
-		public static Dictionary<string, string> GetPostData(ref Filesystem fs,
-			string path, ref HttpListenerContext context, HTTPMethod method)
+		public static async Task<Dictionary<string, string>> GetPostData(Filesystem fs,
+			string path, HttpListenerContext context, HTTPMethod method)
 		{
 			var formdata = new Dictionary<string, string>();
 
@@ -330,7 +326,7 @@ namespace Namiono
 						line = reader.ReadToEnd();
 
 					if (string.IsNullOrEmpty(line))
-						return null;
+						return formdata;
 
 					if (!string.IsNullOrEmpty(ctype))
 					{
@@ -405,7 +401,7 @@ namespace Namiono
 
 										try
 										{
-											fs.Write(uploadpath, filedata);
+											await fs.Write(uploadpath, filedata);
 
 											if (!formdata.ContainsKey(posttag))
 												formdata.Add(posttag, uploadpath);
@@ -442,7 +438,7 @@ namespace Namiono
 								{
 									var p = tmp[i].Split('=');
 									if (!formdata.ContainsKey(p[0]))
-										formdata.Add(p[0], HttpUtility.UrlDecode(p[1]).ToString());
+										formdata.Add(p[0], HttpUtility.UrlDecode(p[1]));
 								}
 						}
 					}

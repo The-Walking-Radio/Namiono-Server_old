@@ -11,11 +11,7 @@ namespace Namiono
 		{
 			var tpl_path = string.Format("templates/{0}.tpl", name.Replace("-", "_"));
 			if (!fs.Exists(tpl_path))
-#if DEBUG
-			throw new Exception(string.Format("Dispatcher (Template (File: {1}) for \"{0}\" was not found!", name, tpl_path));
-#else
-			return string.Format("<p class=\"exclaim\">Dispatcher (Template file for \"{0}\" was not found!</p>", name);
-#endif
+				return string.Format("<p class=\"exclaim\">Dispatcher (Template file for \"{0}\" was not found!</p>", name);
 			else
 			{
 				var output = fs.Read(tpl_path).Result;
@@ -57,8 +53,6 @@ namespace Namiono
 		}
 
 		public static string GetTPLName(string input, string startDel = "[[", string endDel = "]]")
-		{
-			return ExtractString(input, startDel, endDel);
-		}
+			=> ExtractString(input, startDel, endDel);
 	}
 }

@@ -5,10 +5,11 @@ using System.Globalization;
 using Namiono;
 using System.Net;
 using System.Collections.Specialized;
+using System.Threading.Tasks;
 
 public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 {
-	public class Sp_settings<T> : IDisposable
+	public class Sp_settings : IDisposable
 	{
 		byte startTime;
 		byte endTime;
@@ -17,54 +18,30 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 
 		public byte Start
 		{
-			get
-			{
-				return startTime;
-			}
+			get => startTime;
 
-			set
-			{
-				startTime = value;
-			}
+			set => startTime = value;
 		}
 
 		public string AutoDJAvatar
 		{
-			get
-			{
-				return autodj_avatar;
-			}
+			get => autodj_avatar;
 
-			set
-			{
-				autodj_avatar = value;
-			}
+			set => autodj_avatar = value;
 		}
 
 		public string Topic
 		{
-			get
-			{
-				return topic;
-			}
+			get => topic;
 
-			set
-			{
-				topic = value;
-			}
+			set => topic = value;
 		}
 
 		public byte End
 		{
-			get
-			{
-				return endTime;
-			}
+			get => endTime;
 
-			set
-			{
-				endTime = value;
-			}
+			set => endTime = value;
 		}
 
 		public Sp_settings(byte start = 18, byte end = 23, string topic = "Querbeet")
@@ -81,13 +58,13 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 
 	SQLDatabase<T> db;
 	Users<T> users;
-	Sp_settings<T> settings;
+	Sp_settings settings;
 	Filesystem fs;
 	Guid spident;
 	string name;
 
 	public Sendeplan(Guid guid, string name, ref SQLDatabase<T> db,
-		ref Filesystem fs, ref Users<T> users, ref Sp_settings<T> settings)
+		ref Filesystem fs, ref Users<T> users, ref Sp_settings settings)
 	{
 		this.settings = settings;
 		this.name = name;
@@ -136,16 +113,13 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 		var entry_counts = GetEntryCount(day, timestamp, settings.Start, settings.End);
 		var addLink = string.Empty;
 
-		if (users.CanAddSendeplan(userid))
+		if ((users.CanAddSendeplan(userid) && users.GetModerators().Count != 0)
+			&& entry_counts != (settings.End - settings.Start))
 		{
-			if (users.GetModerators().Count != 0)
-				if (entry_counts != (settings.End - settings.Start))
-				{
-					addLink = string.Format("<div class=\"sp_row\"><a href=\"#\" onclick=\"LoadDocument('/providers/sendeplan/'," +
-				  "'#content','Sendeplan','add','day={0}&spident={1}', '')\"><p class=\"exclaim\">Eintragen</p></a></div>", day, spident);
+			addLink = string.Format("<div class=\"sp_row\"><a href=\"#\" onclick=\"LoadDocument('/providers/sendeplan/'," +
+		  "'#content','Sendeplan','add','day={0}&spident={1}', '')\"><p class=\"exclaim\">Eintragen</p></a></div>", day, spident);
 
-					tpl += addLink;
-				}
+			tpl += addLink;
 		}
 
 		tpl = tpl.Replace("[#SP_ENTRIES#]", entries);
@@ -153,7 +127,7 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 		return tpl;
 	}
 
-	public string Name => this.name;
+	public string Name => name;
 
 	public string GetCurWeekPlan(T userid)
 	{
@@ -174,7 +148,7 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 		var nw_box = Dispatcher.ReadTemplate(ref fs, "content-box")
 				.Replace("[[box-content]]", nw_tmp)
 				.Replace("[[content]]", "sendeplan")
-				.Replace("[[box-title]]", string.Format("{0} - Vorschau", this.name));
+				.Replace("[[box-title]]", string.Format("{0} - Vorschau", name));
 
 		return cw_box += nw_box;
 	}
@@ -186,28 +160,28 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 		for (var i = 0; i < 14; i++)
 		{
 			var d_ts = GetMonday().AddDays(i).Subtract(new DateTime(1970, 1, 1)).TotalSeconds;
-			var dbEntry = db.SQLQuery<uint>(string.Format("SELECT banner FROM sendeplan WHERE spident = '{0}'", this.spident));
+			var dbEntry = db.SQLQuery<uint>(string.Format("SELECT banner FROM sendeplan WHERE spident = '{0}'", spident));
 
-			if (dbEntry.Count != 0)
-				for (var ib = uint.MinValue; ib < dbEntry.Count; i++)
-					if (!string.IsNullOrEmpty(dbEntry[ib]["banner"]))
-						if (fs.Exists(Filesystem.Combine("uploads/events/", dbEntry[ib]["banner"])))
-							banners.Add(string.Format("<img src=\"uploads/events/{0}\" />", dbEntry[ib]["banner"]));
+			if (dbEntry.Count == 0)
+				continue;
+
+			for (var ib = uint.MinValue; ib < dbEntry.Count; i++)
+				if (!string.IsNullOrEmpty(dbEntry[ib]["banner"]))
+					if (fs.Exists(Filesystem.Combine("uploads/events/", dbEntry[ib]["banner"])))
+						banners.Add(string.Format("<img src=\"uploads/events/{0}\" />", dbEntry[ib]["banner"]));
 		}
 
-		return banners.Count != 0 ? banners[new System.Random().Next(0, banners.Count)] : string.Empty;
+		return banners.Count != 0 ? banners[new Random().Next(0, banners.Count)] : string.Empty;
 	}
 
 	Dictionary<uint, NameValueCollection> Get_Replay_Entries(int day, byte hour)
-	{
-		return db.SQLQuery<uint>(string.Format("SELECT * FROM sendeplan_replay WHERE day='{0}' AND hour='{1}' AND spident='{2}'", day, hour, this.spident));
-	}
+		=> db.SQLQuery<uint>(string.Format("SELECT * FROM sendeplan_replay WHERE day='{0}'" +
+			" AND hour='{1}' AND spident='{2}'", day, hour, spident));
 
 	Dictionary<uint, NameValueCollection> Get_Entries(int day, byte hour, double ts, double d_ts)
-	{
-		return db.SQLQuery<uint>(string.Format("SELECT * FROM sendeplan WHERE timestamp >='{0}' AND day='{1}' AND hour='{2}'" +
-				" AND timestamp < '{3}' AND spident='{4}'", d_ts, day, hour, ts, this.spident));
-	}
+		=> db.SQLQuery<uint>(string.Format("SELECT * FROM sendeplan WHERE timestamp >='{0}'" +
+			" AND day='{1}' AND hour='{2}' AND timestamp < '{3}' AND spident='{4}'",
+				d_ts, day, hour, ts, spident));
 
 	string enumEntry(Dictionary<uint, NameValueCollection> collection, int day, byte hour)
 	{
@@ -230,7 +204,7 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 			entry = entry.Replace("[#TOPIC#]", topic);
 			entry = entry.Replace("[#MOD#]", users.GetUserNamebyID(uid));
 			entry = entry.Replace("[#UID#]", string.Format("{0}", uid));
-			entry = entry.Replace("[#SPIDENT#]", string.Format("{0}", this.spident));
+			entry = entry.Replace("[#SPIDENT#]", string.Format("{0}", spident));
 
 			entry = entry.Replace("[#DAY#]", string.Format("{0}", day));
 			entry = entry.Replace("[#HOUR#]", string.Format("{0}", hour));
@@ -244,75 +218,77 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 		var entry = string.Empty;
 
 		var ts = GetMonday().AddDays(day).Subtract(new DateTime(1970, 1, 1)).TotalSeconds + 86400;
-		var uid = (T)Convert.ChangeType(db.SQLQuery("SELECT id FROM users WHERE service_profile='1' AND moderator='1' LIMIT '1'", "id"), typeof(T));
+		var uid = (T)Convert.ChangeType(db.SQLQuery("SELECT id FROM users WHERE service_profile='1'" +
+			" AND moderator='1' LIMIT '1'", "id"), typeof(T));
 
 		var dbEntry = Get_Entries(day, hour, ts, d_ts);
 		if (dbEntry.Count != 0)
+		{
 			entry = enumEntry(dbEntry, day, hour);
+			return entry;
+		}
+
+		var dbEntry_replay = Get_Replay_Entries(day, hour);
+		if (dbEntry_replay.Count != 0)
+			entry = enumEntry(dbEntry_replay, day, hour);
 		else
 		{
-			var dbEntry_replay = Get_Replay_Entries(day, hour);
-			if (dbEntry_replay.Count != 0)
-				entry = enumEntry(dbEntry_replay, day, hour);
-			else
-			{
-				entry = Dispatcher.ReadTemplate(ref fs, "sp_entry");
-				entry = entry.Replace("[#TOPIC#]", "Playlist");
-				entry = entry.Replace("[#MOD#]", users.GetUserNamebyID(uid));
-				entry = entry.Replace("[#UID#]", string.Format("{0}", uid));
-				entry = entry.Replace("[#AVATAR#]", users.GetUserAvatarbyID(uid));
-			}
-
-			entry = entry.Replace("[#DAY#]", string.Format("{0}", day));
-			entry = entry.Replace("[#HOUR#]", string.Format("{0}", hour));
-			entry = entry.Replace("[#TS#]", string.Format("{0}", d_ts));
-			entry = entry.Replace("[#SPID#]", string.Format("{0}", 0));
-			entry = entry.Replace("[#SPIDENT#]", string.Format("{0}", this.spident));
-
+			entry = Dispatcher.ReadTemplate(ref fs, "sp_entry");
+			entry = entry.Replace("[#TOPIC#]", "Playlist");
+			entry = entry.Replace("[#MOD#]", users.GetUserNamebyID(uid));
+			entry = entry.Replace("[#UID#]", string.Format("{0}", uid));
+			entry = entry.Replace("[#AVATAR#]", users.GetUserAvatarbyID(uid));
 		}
+
+		entry = entry.Replace("[#DAY#]", string.Format("{0}", day));
+		entry = entry.Replace("[#HOUR#]", string.Format("{0}", hour));
+		entry = entry.Replace("[#TS#]", string.Format("{0}", d_ts));
+		entry = entry.Replace("[#SPID#]", string.Format("{0}", 0));
+		entry = entry.Replace("[#SPIDENT#]", string.Format("{0}", spident));
 
 		return entry;
 	}
 
 	public string Edit_Form(int day, byte hour, double timestamp, T userid)
 	{
-		var sp_entry = db.SQLQuery<uint>(string.Format("SELECT * FROM sendeplan WHERE day='{0}' AND hour='{1}' AND timestamp='{2}' AND spident='{3}' LIMIT '1'",
+		var sp_entry = db.SQLQuery<uint>(string.Format("SELECT * FROM sendeplan WHERE day='{0}'" +
+			" AND hour='{1}' AND timestamp='{2}' AND spident='{3}' LIMIT '1'",
 			day, hour, timestamp, this.spident));
 
 		var output = string.Empty;
 
-		if (sp_entry.Count != 0)
-		{
-			var tpl = Dispatcher.ReadTemplate(ref fs, "sp_form_edit");
-			for (var i = uint.MinValue; i < sp_entry.Count; i++)
-			{
-				var mods = users.GetModerators();
-				if (mods.Count != 0)
-				{
-					var modEntries = string.Empty;
-					for (var i_mod = uint.MinValue; i_mod < mods.Count; i_mod++)
-					{
-						var t = (T)Convert.ChangeType(i_mod, typeof(T));
-						modEntries += string.Format("\t<option value=\"{0}\">{1}</option>",
-							mods[t]["id"], mods[t]["username"]);
-					}
+		if (sp_entry.Count == 0)
+			return output;
 
-					tpl = tpl.Replace("[#SP_MODS#]", modEntries);
+		var tpl = Dispatcher.ReadTemplate(ref fs, "sp_form_edit");
+		for (var i = uint.MinValue; i < sp_entry.Count; i++)
+		{
+			var mods = users.GetModerators();
+			if (mods.Count != 0)
+			{
+				var modEntries = string.Empty;
+				for (var i_mod = uint.MinValue; i_mod < mods.Count; i_mod++)
+				{
+					var t = (T)Convert.ChangeType(i_mod, typeof(T));
+					modEntries += string.Format("\t<option value=\"{0}\">{1}</option>",
+						mods[t]["id"], mods[t]["username"]);
 				}
 
-				tpl = tpl.Replace("[#DAY#]", sp_entry[i]["day"]);
-				tpl = tpl.Replace("[#UID#]", sp_entry[i]["uid"]);
-				tpl = tpl.Replace("[#TS#]", sp_entry[i]["timestamp"]);
-				tpl = tpl.Replace("[#HOUR#]", sp_entry[i]["hour"]);
-				tpl = tpl.Replace("[#TOPIC#]", sp_entry[i]["description"]);
-				tpl = tpl.Replace("[#SPIDENT#]", this.spident.ToString());
-
-				output = tpl;
+				tpl = tpl.Replace("[#SP_MODS#]", modEntries);
 			}
 
-			output = output.Replace("[[box-content]]", tpl).Replace("[[box-title]]", "Sendung bearbeiten").Replace("[[content]]", "sendeplan-edit");
+			tpl = tpl.Replace("[#DAY#]", sp_entry[i]["day"]);
+			tpl = tpl.Replace("[#UID#]", sp_entry[i]["uid"]);
+			tpl = tpl.Replace("[#TS#]", sp_entry[i]["timestamp"]);
+			tpl = tpl.Replace("[#HOUR#]", sp_entry[i]["hour"]);
+			tpl = tpl.Replace("[#TOPIC#]", sp_entry[i]["description"]);
+			tpl = tpl.Replace("[#SPIDENT#]", spident.ToString());
+
+			output = tpl;
 		}
 
+		output = output.Replace("[[box-content]]", tpl).Replace("[[box-title]]",
+			"Sendung bearbeiten").Replace("[[content]]", "sendeplan-edit");
 		return output;
 	}
 
@@ -333,9 +309,10 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 			addFormTpl = addFormTpl.Replace("[#TS#]", string.Format("{0}", day_timestamp));
 			addFormTpl = addFormTpl.Replace("[#UID#]", string.Format("{0}", userid));
 			addFormTpl = addFormTpl.Replace("[#TOPIC#]", settings.Topic);
-			addFormTpl = addFormTpl.Replace("[#SPIDENT#]", this.spident.ToString());
+			addFormTpl = addFormTpl.Replace("[#SPIDENT#]", spident.ToString());
 
-			var hours = db.SQLQuery<uint>(string.Format("SELECT hour FROM sendeplan WHERE day='{0}' AND timestamp >'{1}' and spident='{2}'", day, day_timestamp, this.spident));
+			var hours = db.SQLQuery<uint>(string.Format("SELECT hour FROM sendeplan WHERE day='{0}'" +
+				" AND timestamp >'{1}' and spident='{2}'", day, day_timestamp, this.spident));
 			if (hours.Count == 0)
 			{
 				var hours_replay = db.SQLQuery<uint>(string.Format("SELECT hour FROM sendeplan_replay WHERE day='{0}'", day));
@@ -396,19 +373,17 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 
 		for (var i = uint.MinValue; i < users.Count; i++)
 		{
-			if (db.Count("sendeplan", "uid", users[i]["id"]) != 0)
+			if (db.Count("sendeplan", "uid", (T)Convert.ChangeType(users[i]["id"], typeof(T))) != 0)
 				result = db.SQLInsert(string.Format("DELETE FROM sendeplan WHERE uid='{0}' AND spident='{1}'", users[i]["id"], this.spident));
 
-			if (db.Count("sendeplan_replay", "uid", users[i]["id"]) != 0)
+			if (db.Count("sendeplan_replay", "uid", (T)Convert.ChangeType(users[i]["id"], typeof(T))) != 0)
 				result = db.SQLInsert(string.Format("DELETE FROM sendeplan_replay WHERE uid='{0}' AND spident='{1}'", users[i]["id"], this.spident));
-
 		}
 
 		if ((int)DateTime.Now.DayOfWeek == 1 && DateTime.Now.Hour == 1 && DateTime.Now.Minute < 2)
 		{
 			var ts = GetMonday().Subtract(new DateTime(1970, 1, 1)).TotalSeconds + settings.Start * 3600;
-
-			result = db.SQLInsert(string.Format("DELETE FROM sendeplan WHERE timestamp < '{0}' AND spident='{1}'", ts, this.spident));
+			result = db.SQLInsert(string.Format("DELETE FROM sendeplan WHERE timestamp < '{0}' AND spident='{1}'", ts, spident));
 		}
 
 		return result;
@@ -418,10 +393,11 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 	{
 		var result = false;
 
-		if (db.Count("sendeplan", "timestamp", string.Format("{0}", timestamp)) != 0)
+		if (db.Count("sendeplan", "timestamp", (T)Convert.ChangeType(string.Format("{0}", timestamp), typeof(T))) != 0)
 		{
-			result = db.SQLInsert(string.Format("DELETE FROM sendeplan WHERE day='{0}' AND hour='{1}' AND timestamp='{2}' AND spident='{3}'",
-			  day, hour, timestamp, this.spident));
+			result = db.SQLInsert(string.Format("DELETE FROM sendeplan WHERE day='{0}'" +
+				" AND hour='{1}' AND timestamp='{2}' AND spident='{3}'",
+			  day, hour, timestamp, spident));
 		}
 
 		return result;
@@ -432,68 +408,53 @@ public sealed class Sendeplan<T> : Provider<T, SendeplanEntry<T>>, IDisposable
 		var res = false;
 		if (users.CanEditSendeplan(userid) && users.IsModerator((T)Convert.ChangeType(user, typeof(T))))
 		{
-			res = db.SQLInsert(string.Format("UPDATE sendeplan SET day='{0}' WHERE timestamp='{1}' AND spident='{2}'", day, timestamp, spident));
-			res = db.SQLInsert(string.Format("UPDATE sendeplan SET hour='{0}' WHERE timestamp='{1}' AND spident='{2}'", hour, timestamp, spident));
-			res = db.SQLInsert(string.Format("UPDATE sendeplan SET uid='{0}' WHERE timestamp='{1}' AND spident='{2}'", user, timestamp, spident));
-			res = db.SQLInsert(string.Format("UPDATE sendeplan SET description='{0}' WHERE timestamp='{1}' AND spident='{2}'", description, timestamp, spident));
-
-			return res;
+			res = db.SQLInsert(string.Format("UPDATE sendeplan SET day='{0}' WHERE timestamp='{1}'" +
+				" AND spident='{2}'", day, timestamp, spident));
+			res = db.SQLInsert(string.Format("UPDATE sendeplan SET hour='{0}' WHERE timestamp='{1}'" +
+				" AND spident='{2}'", hour, timestamp, spident));
+			res = db.SQLInsert(string.Format("UPDATE sendeplan SET uid='{0}' WHERE timestamp='{1}'" +
+				" AND spident='{2}'", user, timestamp, spident));
+			res = db.SQLInsert(string.Format("UPDATE sendeplan SET description='{0}' WHERE timestamp='{1}'" +
+				" AND spident='{2}'", description, timestamp, spident));
 		}
-		else
-			return res;
+
+		return res;
 	}
 
 	public bool Insert_SPEntry(string day, string hour, string timestamp, string user, string description, T userid)
 	{
 		var ts = double.Parse(timestamp) + double.Parse(hour) * 3600;
-		var t = db.SQLQuery<uint>(string.Format("SELECT * FROm sendeplan WHERE day='{0}' AND hour='{1}' AND timestamp >='{2}' AND spident='{3}'",
+		var t = db.SQLQuery<uint>(string.Format("SELECT * FROm sendeplan WHERE day='{0}' AND hour='{1}'" +
+			" AND timestamp >='{2}' AND spident='{3}'",
 			day, hour, ts, this.spident));
 
 		var tmp = false;
 
-		if (t.Count == 0)
+		if (t.Count != 0)
+			return tmp;
+
+		var ismod = db.SQLQuery(string.Format("SELECT moderator FROM users WHERE id='{0}' LIMIT '1'", user), "moderator");
+		if (ismod == "1")
 		{
-			var ismod = db.SQLQuery(string.Format("SELECT moderator FROM users WHERE id='{0}' LIMIT '1'", user), "moderator");
-			if (ismod == "1")
-			{
-				tmp = db.SQLInsert(string.Format("INSERT INTO sendeplan (day,hour,description,uid,timestamp,spident,banner)" +
-				"VALUES ('{0}','{1}','{2}','{3}','{4}','{5}','')", day, hour,
-				string.IsNullOrEmpty(description) ? settings.Topic : description, user, ts, spident));
-			}
+			tmp = db.SQLInsert(string.Format("INSERT INTO sendeplan (day,hour,description,uid,timestamp,spident,banner)" +
+			"VALUES ('{0}','{1}','{2}','{3}','{4}','{5}','')", day, hour,
+			string.IsNullOrEmpty(description) ? settings.Topic : description, user, ts, spident));
 		}
 
 		return tmp;
 	}
 
-	public void Heartbeat()
-	{
-		CleanupDatabase();
-	}
+	public void Heartbeat() => CleanupDatabase();
 
 	public void Close()
 	{
 	}
 
-	public void Dispose()
-	{
-		settings.Dispose();
-	}
+	public void Dispose() => settings.Dispose();
 
-	public Sp_settings<T> Settings
-	{
-		get
-		{
-			return settings;
-		}
-	}
+	public Sp_settings Settings => settings;
 
-	public override Dictionary<T, SendeplanEntry<T>> Members
-	{
-		get
-		{
-			return members;
-		}
-	}
+	public override Dictionary<T, SendeplanEntry<T>> Members => members;
 }
 
 public class SendeplanEntry<T>
